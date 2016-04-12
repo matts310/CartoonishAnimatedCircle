@@ -12,12 +12,32 @@ import React, {
 import Point from 'point-geometry';
 
 export default class AnimatedCircle extends Component {
+  static defaultProps = {
+    radius: 50,
+    maxElongationScale : 2,
+    maxContractionScale : .8,
+    maxVelocity : 4,
+    bounceFriction : 4,
+    scaleFriction : 3
+  };
+
+  static propTypes = {
+    radius: React.PropTypes.number,
+    maxElongationScale: React.PropTypes.number,
+    maxContractionScale : React.PropTypes.number,
+    maxVelocity : React.PropTypes.number,
+    bounceFriction: React.PropTypes.number,
+    scaleFriction: React.PropTypes.number,
+    children: React.PropTypes.element.isRequired
+  };
+
   constructor(props){
     super(props);
     
     this.state = {
       pan: new Animated.ValueXY(0,0),
       v : new Animated.ValueXY(0,0),
+      vMag : new Animated.Value(0.0),
       rotation : new Animated.Value(0)
     }
 
@@ -46,34 +66,51 @@ export default class AnimatedCircle extends Component {
           vx: this.state.v.x,
           vy: this.state.v.y
         }
-      ],{listener:() => this.setRotation()}),
+      ],{listener:() => this.setRotationAndVelocity()}),
 
       onPanResponderRelease: (e, gesture) => {
-        Animated.spring(
+        // stagger just to emphasize the woblle afterwards
+        Animated.stagger(50, [Animated.spring(
           this.state.pan, {
             toValue: {
               x: 0,
-              y: 0
-            }
+              y: 0,
+            }, friction: this.props.bounceFriction  
           }
-        ).start();
+        ), Animated.spring(this.state.vMag, {
+          toValue: 0,
+          friction: this.props.scaleFriction
+        })]).start()
       }
     });
   }
  
-  setRotation() {
-    this.state.rotation.setValue(new Point(this.state.v.x._value,this.state.v.y._value).angle());
-    // console.log(this.state.rotation._value);
+  setRotationAndVelocity() {
+    const velocityVector = new Point(this.state.v.x._value,this.state.v.y._value)
+    this.state.rotation.setValue(velocityVector.angle());
+    this.state.vMag.setValue(velocityVector.mag());
   }
 
   createTransform(){
-    return {transform:[{rotate:this.state.rotation.interpolate({inputRange:[0,6.28318531],outputRange:['0rad','6.28318531rad']})}, {scaleX:this.state.v.x.interpolate({inputRange:[-4,0,4],outputRange:[1.7,1,1.7],extrapolate:'clamp'})},{rotate:this.state.rotation.interpolate({inputRange:[0,6.28318531],outputRange:['6.28318531rad','0rad']})}]}
+    const maxV = this.props.maxVelocity;
+    const twicePi = Math.PI * 2;
+    return {transform:[
+        {rotate:this.state.rotation.interpolate({inputRange:[0,twicePi],outputRange:['0rad', twicePi + 'rad']})},
+        {scaleX:this.state.vMag.interpolate({inputRange:[-1*maxV,0,maxV],outputRange:[this.props.maxElongationScale,1,this.props.maxElongationScale],extrapolate:'clamp'})},
+        {scaleY:this.state.vMag.interpolate({inputRange:[-1*maxV,0,maxV],outputRange:[this.props.maxContractionScale,1,this.props.maxContractionScale],extrapolate:'clamp'})},
+        {rotate:this.state.rotation.interpolate({inputRange:[0,twicePi],outputRange:[twicePi + 'rad','0rad']})}
+      ]};
   }
 
   render(){
+    this.props.children.props.style.width = this.props.radius*2;
+    this.props.children.props.style.height = this.props.radius*2;
+    this.props.children.props.style.borderRadius = this.props.radius;
+    this.props.children.props.style.alignItems = 'center';
+    this.props.children.props.style.justifyContent = 'center';
     return (
-      <Animated.View style={[styles.circle, this.state.pan.getLayout(), this.createTransform()]} {...this.panResponder.panHandlers}>
-        <Text>--></Text>
+      <Animated.View  style={[{...this.props.style},{width:this.props.radius*2,height:this.props.radius*2,borderRadius:this.props.radius},styles.circle, this.state.pan.getLayout(), this.createTransform()]} {...this.panResponder.panHandlers}>
+        {this.props.children}
       </Animated.View>
     )
   }
@@ -82,10 +119,6 @@ export default class AnimatedCircle extends Component {
 
 const styles = StyleSheet.create({
   circle: {
-    width: CIRCLE_RADIUS * 2,
-    height: CIRCLE_RADIUS * 2,
-    borderRadius: CIRCLE_RADIUS,
-    backgroundColor:'blue',
     alignItems:'center',
     justifyContent:'center'
   }
